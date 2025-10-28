@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, Button, BackHandler, StyleSheet, StatusBar } from 'react-native';
+import { View, Text, Button, BackHandler, Linking, StyleSheet, StatusBar } from 'react-native';
 import { WebView } from 'react-native-webview';
 
 const initialUrl = 'https://www.7publi.com/';
@@ -7,104 +7,105 @@ const initialUrl = 'https://www.7publi.com/';
 export default function App() {
   const webViewRef = useRef(null);
   const [canGoBack, setCanGoBack] = useState(false);
-  const [error, setError] = useState(false);
-  const [key, setKey] = useState(0);
-
-  // ✅ Always open links inside the same WebView
-  const handleShouldStartLoad = (request) => {
-    const url = request.url;
-
-    // Allow everything to load inside WebView
-    if (url.startsWith('http') || url.startsWith('https')) {
-      return true;
-    }
-
-    // Block non-web URLs (like mailto, tel, etc.)
-    return false;
-  };
+  const [currentUrl, setCurrentUrl] = useState(initialUrl);
+  const [loadingError, setLoadingError] = useState(false);
 
   // Handle Android back button
   useEffect(() => {
-    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (canGoBack && webViewRef.current) {
+    const backAction = () => {
+      if (canGoBack) {
         webViewRef.current.goBack();
         return true;
       }
       return false;
-    });
-
+    };
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
     return () => backHandler.remove();
   }, [canGoBack]);
 
-  const injectedJS = `
-    const style = document.createElement('style');
-    style.innerHTML = '* { user-select: none; -webkit-user-select: none; -ms-user-select: none; }';
-    document.head.appendChild(style);
-    true;
-  `;
+  // Handle deep link redirect (Facebook / Google login success)
+  useEffect(() => {
+    const handleDeepLink = (event) => {
+      const url = event.url;
+      console.log('Received deep link:', url);
+      if (url.includes('7publi.com')) {
+        // reload site when returning from login
+        setCurrentUrl(url);
+      }
+    };
+    Linking.addEventListener('url', handleDeepLink);
 
-  const handleRefresh = () => {
-    setError(false);
-    setKey(prev => prev + 1);
+    // Check if app opened with a URL
+    Linking.getInitialURL().then((url) => {
+      if (url && url.includes('7publi.com')) {
+        setCurrentUrl(url);
+      }
+    });
+
+    return () => Linking.removeAllListeners('url');
+  }, []);
+
+  // Handle navigation changes inside WebView
+  const handleNavigationStateChange = (navState) => {
+    setCanGoBack(navState.canGoBack);
+    setCurrentUrl(navState.url);
   };
 
-  if (error) {
-    return (
-      <View style={styles.errorContainer}>
-        <Text style={styles.errorText}>❌ Loading error</Text>
-        <Text style={styles.errorDesc}>Please check your internet connection.</Text>
-        <Button title="🔄 Reload page" onPress={handleRefresh} color="#007bff" />
-      </View>
-    );
-  }
+  // Handle external redirects (Facebook, Google login)
+  const handleShouldStartLoadWithRequest = (request) => {
+    const url = request.url;
+
+    if (
+      url.startsWith('https://www.facebook.com') ||
+      url.startsWith('https://accounts.google.com') ||
+      url.includes('oauth')
+    ) {
+      Linking.openURL(url); // open outside WebView
+      return false;
+    }
+
+    return true;
+  };
+
+  const handleRefresh = () => {
+    setLoadingError(false);
+    webViewRef.current.reload();
+  };
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-      <WebView
-        key={key}
-        ref={webViewRef}
-        source={{ uri: initialUrl }}
-        onNavigationStateChange={(navState) => setCanGoBack(navState.canGoBack)}
-        onShouldStartLoadWithRequest={handleShouldStartLoad}
-        onError={() => setError(true)}
-        injectedJavaScript={injectedJS}
-        javaScriptEnabled
-        domStorageEnabled
-        startInLoadingState
-        style={styles.webview}
-        scalesPageToFit
-      />
+      <StatusBar backgroundColor="#000" barStyle="light-content" />
+      {loadingError ? (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>❌ Error loading page</Text>
+          <Text style={styles.errorDesc}>Check your internet connection.</Text>
+          <Button title="🔄 Refresh" onPress={handleRefresh} color="#007bff" />
+        </View>
+      ) : (
+        <WebView
+          ref={webViewRef}
+          source={{ uri: currentUrl }}
+          onNavigationStateChange={handleNavigationStateChange}
+          onShouldStartLoadWithRequest={handleShouldStartLoadWithRequest}
+          onError={() => setLoadingError(true)}
+          startInLoadingState
+          javaScriptEnabled
+          domStorageEnabled
+          allowsBackForwardNavigationGestures
+        />
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    marginTop: StatusBar.currentHeight || 30,
-    backgroundColor: '#fff',
-  },
-  webview: {
-    flex: 1,
-  },
+  container: { flex: 1 },
   errorContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#fff',
     padding: 20,
   },
-  errorText: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#d9534f',
-    marginBottom: 8,
-  },
-  errorDesc: {
-    fontSize: 16,
-    color: '#555',
-    marginBottom: 20,
-    textAlign: 'center',
-  },
+  errorText: { fontSize: 18, fontWeight: 'bold', color: 'red' },
+  errorDesc: { fontSize: 14, color: '#555', marginVertical: 10, textAlign: 'center' },
 });
