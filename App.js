@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, Button, BackHandler, Linking, StyleSheet, StatusBar } from 'react-native';
+import { View, Text, Button, BackHandler, StyleSheet, StatusBar } from 'react-native';
 import { WebView } from 'react-native-webview';
 
 const initialUrl = 'https://www.7publi.com/';
@@ -8,12 +8,18 @@ export default function App() {
   const webViewRef = useRef(null);
   const [canGoBack, setCanGoBack] = useState(false);
   const [error, setError] = useState(false);
-  const [key, setKey] = useState(0); // to reload WebView
+  const [key, setKey] = useState(0);
 
+  // ✅ Always open links inside the same WebView
   const handleShouldStartLoad = (request) => {
     const url = request.url;
-    if (url.startsWith(initialUrl)) return true;
-    Linking.openURL(url);
+
+    // Allow everything to load inside WebView
+    if (url.startsWith('http') || url.startsWith('https')) {
+      return true;
+    }
+
+    // Block non-web URLs (like mailto, tel, etc.)
     return false;
   };
 
@@ -30,7 +36,6 @@ export default function App() {
     return () => backHandler.remove();
   }, [canGoBack]);
 
-  // Disable only text selection
   const injectedJS = `
     const style = document.createElement('style');
     style.innerHTML = '* { user-select: none; -webkit-user-select: none; -ms-user-select: none; }';
@@ -38,21 +43,18 @@ export default function App() {
     true;
   `;
 
-  // Refresh function
   const handleRefresh = () => {
     setError(false);
-    setKey(prev => prev + 1); // re-render WebView
+    setKey(prev => prev + 1);
   };
 
-  // Show error screen if connection fails
   if (error) {
     return (
-    <View style={styles.errorContainer}>
-  <Text style={styles.errorText}>❌ Loading error</Text>
-  <Text style={styles.errorDesc}>Please check your internet connection.</Text>
-  <Button title="🔄 Reload page" onPress={handleRefresh} color="#007bff" />
-</View>
-
+      <View style={styles.errorContainer}>
+        <Text style={styles.errorText}>❌ Loading error</Text>
+        <Text style={styles.errorDesc}>Please check your internet connection.</Text>
+        <Button title="🔄 Reload page" onPress={handleRefresh} color="#007bff" />
+      </View>
     );
   }
 
@@ -67,10 +69,11 @@ export default function App() {
         onShouldStartLoadWithRequest={handleShouldStartLoad}
         onError={() => setError(true)}
         injectedJavaScript={injectedJS}
-        javaScriptEnabled={true}
-        domStorageEnabled={true}
+        javaScriptEnabled
+        domStorageEnabled
+        startInLoadingState
         style={styles.webview}
-        scalesPageToFit={true} // zoom enabled
+        scalesPageToFit
       />
     </View>
   );
